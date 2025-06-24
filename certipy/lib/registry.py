@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Union
 
 from certipy.lib.constants import WELLKNOWN_RIDS, WELLKNOWN_SIDS
 from certipy.lib.ldap import LDAPEntry
+from certipy.lib.bloodhound import BloodHound, BloodHoundException
 
 
 class RegEntry(LDAPEntry):
@@ -73,7 +74,7 @@ class RegConnection:
     - Map between SIDs and their friendly names
     """
 
-    def __init__(self, domain: str, sids: List[str], scheme: str = "file") -> None:
+    def __init__(self, domain: str, sids: List[str], scheme: str = "file", bloodhound: Optional[BloodHound] = None) -> None:
         """
         Initialize a registry connection.
 
@@ -86,6 +87,7 @@ class RegConnection:
         self.sids: List[str] = sids
         self.sid_map: Dict[str, RegEntry] = {}
         self.scheme: str = scheme
+        self.bloodhound: Optional[BloodHound] = bloodhound
 
     def get_user_sids(
         self,
@@ -161,6 +163,24 @@ class RegConnection:
             self.sid_map[sid] = entry
             return entry
 
+        if self.bloodhound:
+            try:
+                name, obj_type = self.bloodhound.lookup_sid(sid)
+                entry = RegEntry(
+                    **{
+                        "attributes": {
+                            "objectSid": f"{self.domain.upper()}-{sid}",
+                            "objectType": obj_type.capitalize(),
+                            "name": f"{self.domain}\\{name}",
+                        }
+                    }
+                )
+                self.sid_map[sid] = entry
+                return entry
+            except BloodHoundException:
+                # Entry was not found
+                pass
+                
         # Create a generic entry for unknown SIDs
         entry = RegEntry(
             **{
